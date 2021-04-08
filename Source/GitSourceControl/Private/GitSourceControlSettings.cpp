@@ -70,6 +70,19 @@ bool FGitSourceControlSettings::SetLfsUserName(const FString& InString)
 	return bChanged;
 }
 
+const TArray<FString> FGitSourceControlSettings::GetSubmodulePaths() const
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	return SubmodulePaths;
+}
+
+bool FGitSourceControlSettings::SetSubmodulePaths(const TArray<FString> Paths)
+{
+	FScopeLock ScopeLock(&CriticalSection);
+	SubmodulePaths = Paths;
+	return true;
+}
+
 // This is called at startup nearly before anything else in our module: BinaryPath will then be used by the provider
 void FGitSourceControlSettings::LoadSettings()
 {
@@ -78,6 +91,7 @@ void FGitSourceControlSettings::LoadSettings()
 	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), BinaryPath, IniFile);
 	GConfig->GetBool(*GitSettingsConstants::SettingsSection, TEXT("UsingGitLfsLocking"), bUsingGitLfsLocking, IniFile);
 	GConfig->GetString(*GitSettingsConstants::SettingsSection, TEXT("LfsUserName"), LfsUserName, IniFile);
+	GConfig->GetArray(*GitSettingsConstants::SettingsSection, TEXT("SubmodulePaths"), SubmodulePaths, IniFile);
 }
 
 void FGitSourceControlSettings::SaveSettings() const
@@ -87,4 +101,5 @@ void FGitSourceControlSettings::SaveSettings() const
 	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("BinaryPath"), *BinaryPath, IniFile);
 	GConfig->SetBool(*GitSettingsConstants::SettingsSection, TEXT("UsingGitLfsLocking"), bUsingGitLfsLocking, IniFile);
 	GConfig->SetString(*GitSettingsConstants::SettingsSection, TEXT("LfsUserName"), *LfsUserName, IniFile);
+	GConfig->SetArray(*GitSettingsConstants::SettingsSection, TEXT("SubmodulePaths"), SubmodulePaths, IniFile);
 }

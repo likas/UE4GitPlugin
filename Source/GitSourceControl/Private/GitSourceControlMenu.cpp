@@ -379,6 +379,21 @@ void FGitSourceControlMenu::RefreshClicked()
 	}
 }
 
+void FGitSourceControlMenu::HistoryClicked()
+{
+	if (!OperationInProgressNotification.IsValid())
+	{
+		// Launch a "Show History" Operation
+		
+	}
+	else
+	{
+		FMessageLog SourceControlLog("SourceControl");
+		SourceControlLog.Warning(LOCTEXT("SourceControlMenu_InProgress", "Source control operation already in progress"));
+		SourceControlLog.Notify();
+	}
+}
+
 // Display an ongoing notification during the whole operation
 void FGitSourceControlMenu::DisplayInProgressNotification(const FText& InOperationInProgressString)
 {
@@ -492,6 +507,16 @@ void FGitSourceControlMenu::AddMenuExtension(FMenuBuilder& Builder)
 		LOCTEXT("GitRefresh",			"Refresh"),
 		LOCTEXT("GitRefreshTooltip",	"Update the source control status of all files in the local repository."),
 		FSlateIcon(FEditorStyle::GetStyleSetName(), "SourceControl.Actions.Refresh"),
+		FUIAction(
+			FExecuteAction::CreateRaw(this, &FGitSourceControlMenu::RefreshClicked),
+			FCanExecuteAction()
+		)
+	);
+
+	Builder.AddMenuEntry(
+		LOCTEXT("GitShowHistory", "Show History"),
+		LOCTEXT("GitHistoryTooltip", "Show history of a current branch"),
+		FSlateIcon(FEditorStyle::GetStyleSetName(), "SourceControl.Actions.History"),
 		FUIAction(
 			FExecuteAction::CreateRaw(this, &FGitSourceControlMenu::RefreshClicked),
 			FCanExecuteAction()

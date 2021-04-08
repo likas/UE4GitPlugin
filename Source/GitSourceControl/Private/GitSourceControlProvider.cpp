@@ -87,6 +87,7 @@ void FGitSourceControlProvider::CheckRepositoryStatus(const FString& InPathToGit
 		bGitRepositoryFound = GitSourceControlUtils::GetBranchName(InPathToGitBinary, PathToRepositoryRoot, BranchName);
 		if(bGitRepositoryFound)
 		{
+			GitSourceControlUtils::CheckSubmodules(InPathToGitBinary, PathToRepositoryRoot);
 			GitSourceControlUtils::GetRemoteUrl(InPathToGitBinary, PathToRepositoryRoot, RemoteUrl);
 		}
 		else
@@ -102,6 +103,8 @@ void FGitSourceControlProvider::CheckRepositoryStatus(const FString& InPathToGit
 	// Get user name & email (of the repository, else from the global Git config)
 	GitSourceControlUtils::GetUserConfig(InPathToGitBinary, PathToRepositoryRoot, UserName, UserEmail);
 }
+
+
 
 void FGitSourceControlProvider::Close()
 {

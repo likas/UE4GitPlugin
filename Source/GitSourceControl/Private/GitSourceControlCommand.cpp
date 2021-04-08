@@ -24,6 +24,7 @@ FGitSourceControlCommand::FGitSourceControlCommand(const TSharedRef<class ISourc
 	PathToGitBinary = GitSourceControl.AccessSettings().GetBinaryPath();
 	bUsingGitLfsLocking = GitSourceControl.AccessSettings().IsUsingGitLfsLocking();
 	PathToRepositoryRoot = GitSourceControl.GetProvider().GetPathToRepositoryRoot();
+	SubmodulePaths = GitSourceControl.AccessSettings().GetSubmodulePaths();
 }
 
 bool FGitSourceControlCommand::DoWork()

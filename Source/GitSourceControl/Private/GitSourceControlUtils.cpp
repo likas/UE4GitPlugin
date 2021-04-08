@@ -131,7 +131,7 @@ static bool RunCommandInternalRaw(const FString& InCommand, const FString& InPat
 	FPlatformProcess::ExecProcess(*PathToGitOrEnvBinary, *FullCommand, &ReturnCode, &OutResults, &OutErrors);
 
 	// TODO: add a setting to easily enable Verbose logging
-	UE_LOG(LogSourceControl, Verbose, TEXT("RunCommand(%s):\n%s"), *InCommand, *OutResults);
+	UE_LOG(LogSourceControl, Log, TEXT("RunCommand(%s):\n%s"), *InCommand, *OutResults);
 	if(ReturnCode != ExpectedReturnCode || OutErrors.Len() > 0)
 	{
 		UE_LOG(LogSourceControl, Warning, TEXT("RunCommand(%s) ReturnCode=%d:\n%s"), *InCommand, ReturnCode, *OutErrors);
@@ -332,6 +332,42 @@ FString FindGitBinaryPath()
 	}
 
 	return GitBinaryPath;
+}
+
+void CheckSubmodules(const FString& InPathToGitBinary, const FString& PathToRepositoryRoot)
+{
+	FString InfoMessages;
+	FString ErrorMessages;
+	bool bCommandSuccess = RunCommandInternalRaw(TEXT("submodule"), InPathToGitBinary, PathToRepositoryRoot, TArray<FString>(), TArray<FString>(), InfoMessages, ErrorMessages);
+	if (bCommandSuccess) 
+	{
+		FGitSourceControlModule& GitSourceControl = FModuleManager::GetModuleChecked<FGitSourceControlModule>("GitSourceControl");
+
+		TArray<FString> SubmodulePaths;
+		ParseSubmodules(InfoMessages, &SubmodulePaths);
+
+		if (SubmodulePaths.Num() > 0) 
+		{
+			UE_LOG(LogTemp, Log, TEXT("Submodules found: \n"));
+			for (auto path : SubmodulePaths) UE_LOG(LogTemp, Log, TEXT("%s"), *path);
+			GitSourceControl.AccessSettings().SetSubmodulePaths(SubmodulePaths);
+		}
+	}
+
+
+}
+
+void ParseSubmodules(const FString& InMessages, TArray<FString> *OutSubmodulePaths) 
+{
+	TArray<FString> LinesOutput;
+	TArray<FString> SplittedLine;
+	//TODO Find string splitting algo which is less complex than O(N^2)
+	InMessages.ParseIntoArrayLines(LinesOutput);
+	for (auto Line : LinesOutput)
+	{
+		Line.ParseIntoArrayWS(SplittedLine);
+		OutSubmodulePaths->Add( SplittedLine[1] );
+	}	 
 }
 
 bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion *OutVersion)
@@ -969,7 +1005,7 @@ static void ParseDirectoryStatusResult(const FString& InPathToGitBinary, const F
  */
 static void ParseStatusResults(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, const TMap<FString, FString>& InLockedFiles, const TArray<FString>& InResults, TArray<FGitSourceControlState>& OutStates)
 {
-	if((InFiles.Num() == 1) && FPaths::DirectoryExists(InFiles[0]))
+	if ((InFiles.Num() == 1) && FPaths::DirectoryExists(InFiles[0]))
 	{
 		// 1) Special case for "status" of a directory: requires to get the list of files by ourselves.
 		//   (this is triggered by the "Submit to Source Control" menu)
@@ -978,7 +1014,7 @@ static void ParseStatusResults(const FString& InPathToGitBinary, const FString& 
 		TArray<FString> Files;
 		const FString& Directory = InFiles[0];
 		const bool bResult = ListFilesInDirectoryRecurse(InPathToGitBinary, InRepositoryRoot, Directory, Files);
-		if(bResult)
+		if (bResult)
 		{
 			ParseFileStatusResult(InPathToGitBinary, InRepositoryRoot, InUsingLfsLocking, Files, InLockedFiles, InResults, OutStates);
 		}
@@ -1000,7 +1036,7 @@ bool GetAllLocks(const FString& InPathToGitBinary, const FString& InRepositoryRo
 	TArray<FString> Results;
 	TArray<FString> ErrorMessages;
 	const bool bResult = RunCommand(TEXT("lfs locks"), InPathToGitBinary, InRepositoryRoot, TArray<FString>(), TArray<FString>(), Results, ErrorMessages);
-	for(const FString& Result : Results)
+	for (const FString& Result : Results)
 	{
 		FGitLfsLocksParser LockFile(InRepositoryRoot, Result, bAbsolutePaths);
 		// TODO LFS Debug log
@@ -1012,13 +1048,14 @@ bool GetAllLocks(const FString& InPathToGitBinary, const FString& InRepositoryRo
 }
 
 // Run a batch of Git "status" command to update status of given files and/or directories.
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
+bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InSubmodulePaths, const bool InUsingLfsLocking, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates)
 {
 	bool bResults = true;
 	TMap<FString, FString> LockedFiles;
+	FString RepositoryRoot = InRepositoryRoot;
 
 	// 0) Issue a "git lfs locks" command at the root of the repository
-	if(InUsingLfsLocking)
+	if (InUsingLfsLocking)
 	{
 		TArray<FString> ErrorMessages;
 		GetAllLocks(InPathToGitBinary, InRepositoryRoot, true, ErrorMessages, LockedFiles);
@@ -1027,11 +1064,11 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 	// Git status does not show any "untracked files" when called with files from different subdirectories! (issue #3)
 	// 1) So here we group files by path (ie. by subdirectory)
 	TMap<FString, TArray<FString>> GroupOfFiles;
-	for(const auto& File : InFiles)
+	for (const auto& File : InFiles)
 	{
 		const FString Path = FPaths::GetPath(*File);
 		TArray<FString>* Group = GroupOfFiles.Find(Path);
-		if(Group != nullptr)
+		if (Group != nullptr)
 		{
 			Group->Add(File);
 		}
@@ -1052,14 +1089,14 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 	Parameters.Add(TEXT("--ignored"));
 
 	// 2) then we can batch git status operation by subdirectory
-	for(const auto& Files : GroupOfFiles)
+	for (const auto& Files : GroupOfFiles)
 	{
 		// "git status" can only detect renamed and deleted files when it operate on a folder, so use one folder path for all files in a directory
 		const FString Path = FPaths::GetPath(*Files.Value[0]);
 		TArray<FString> OnePath;
 		// Only one file: optim very useful for the .uproject file at the root to avoid parsing the whole repository
 		// (works only if the file exists)
-		if((Files.Value.Num() == 1) && (FPaths::FileExists(Files.Value[0])))
+		if ((Files.Value.Num() == 1) && (FPaths::FileExists(Files.Value[0])))
 		{
 			OnePath.Add(Files.Value[0]);
 		}
@@ -1067,14 +1104,44 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 		{
 			OnePath.Add(Path);
 		}
+
+		// Checking if files we want to check is in submodule or not
+		if (InSubmodulePaths.Num() > 0)
+		{
+			RepositoryRoot = InRepositoryRoot;
+			GitSourceControlUtils::GetBranchName(InPathToGitBinary, RepositoryRoot, BranchName);
+			for (auto submodule_path : InSubmodulePaths)
+			{
+				if (OnePath[0].Contains(submodule_path))
+				{
+					RepositoryRoot.Append("/");
+					RepositoryRoot.Append(submodule_path);
+					GitSourceControlUtils::GetBranchName(InPathToGitBinary, RepositoryRoot, BranchName);
+					break;
+				}
+			}
+		}
+
+
+
 		{
 			TArray<FString> Results;
 			TArray<FString> ErrorMessages;
-			const bool bResult = RunCommand(TEXT("status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
+
+			bool bResult = false;
+			if (OnePath[0].Contains("Plugins")) 
+			{
+				bResult = RunCommand(TEXT("submodule foreach git status"), InPathToGitBinary, InRepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
+			}
+			else
+			{
+				bResult = RunCommand(TEXT("status"), InPathToGitBinary, RepositoryRoot, Parameters, OnePath, Results, ErrorMessages);
+			}
+			
 			OutErrorMessages.Append(ErrorMessages);
 			if(bResult)
 			{
-				ParseStatusResults(InPathToGitBinary, InRepositoryRoot, InUsingLfsLocking, Files.Value, LockedFiles, Results, OutStates);
+				ParseStatusResults(InPathToGitBinary, RepositoryRoot, InUsingLfsLocking, Files.Value, LockedFiles, Results, OutStates);
 			}
 		}
 
@@ -1087,7 +1154,7 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 			TArray<FString> ParametersLsRemote;
 			ParametersLsRemote.Add(TEXT("origin"));
 			ParametersLsRemote.Add(BranchName);
-			const bool bResultLsRemote = RunCommand(TEXT("ls-remote"), InPathToGitBinary, InRepositoryRoot, ParametersLsRemote, OnePath, Results, ErrorMessages);
+			const bool bResultLsRemote = RunCommand(TEXT("ls-remote"), InPathToGitBinary, RepositoryRoot, ParametersLsRemote, OnePath, Results, ErrorMessages);
 			// If the command is successful and there is only 1 line on the output the branch exists on remote
 			const bool bDiffAgainstRemote = bResultLsRemote && Results.Num();
 
@@ -1097,13 +1164,23 @@ bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InReposito
 			ParametersLog.Add(TEXT("--pretty=")); // this omits the commit lines, just gets us files
 			ParametersLog.Add(TEXT("--name-only"));
 			ParametersLog.Add(bDiffAgainstRemote ? TEXT("HEAD..HEAD@{upstream}") : BranchName);
-			const bool bResultDiff = RunCommand(TEXT("log"), InPathToGitBinary, InRepositoryRoot, ParametersLog, OnePath, Results, ErrorMessages);
+
+			bool bResultDiff = false;
+			if (OnePath[0].Contains("Plugins") && !(OnePath[0].Contains("Engine")))
+			{
+				bResultDiff = RunCommand(TEXT("submodule foreach git log"), InPathToGitBinary, RepositoryRoot, ParametersLog, OnePath, Results, ErrorMessages);
+			}
+			else
+			{
+				bResultDiff = RunCommand(TEXT("log"), InPathToGitBinary, RepositoryRoot, ParametersLog, OnePath, Results, ErrorMessages);
+			}
+			
 			OutErrorMessages.Append(ErrorMessages);
 			if (bResultDiff)
 			{
 				for (const FString& NewerFileName : Results)
 				{
-					const FString NewerFilePath = FPaths::ConvertRelativePathToFull(InRepositoryRoot, NewerFileName);
+					const FString NewerFilePath = FPaths::ConvertRelativePathToFull(RepositoryRoot, NewerFileName);
 
 					// Find existing corresponding file state to update it (not found would mean new file or not in the current path)
 					if (FGitSourceControlState* FileStatePtr = OutStates.FindByPredicate([NewerFilePath](FGitSourceControlState& FileState) { return FileState.LocalFilename == NewerFilePath; }))
@@ -1410,9 +1487,25 @@ public:
 };
 
 // Run a Git "log" command and parse it.
-bool RunGetHistory(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const FString& InFile, bool bMergeConflict, TArray<FString>& OutErrorMessages, TGitSourceControlHistory& OutHistory)
+bool RunGetHistory(const FString& InPathToGitBinary, const FString& InRepositoryRoot, TArray<FString>& InSubmodulePaths, const FString& InFile, bool bMergeConflict, TArray<FString>& OutErrorMessages, TGitSourceControlHistory& OutHistory)
 {
-	bool bResults;
+	bool bResults = false;
+	bool bIsInSubmodule = false;
+	FString RepositoryRoot = InRepositoryRoot;
+
+	if (InSubmodulePaths.Num() > 0)
+	{
+		for (auto submodule_path : InSubmodulePaths)
+		{
+			if (InFile.Contains(submodule_path))
+			{
+				RepositoryRoot.Append("/");
+				RepositoryRoot.Append(submodule_path);
+				break;
+			}
+		}
+	}
+	
 	{
 		TArray<FString> Results;
 		TArray<FString> Parameters;
@@ -1429,7 +1522,17 @@ bool RunGetHistory(const FString& InPathToGitBinary, const FString& InRepository
 		}
 		TArray<FString> Files;
 		Files.Add(*InFile);
-		bResults = RunCommand(TEXT("log"), InPathToGitBinary, InRepositoryRoot, Parameters, Files, Results, OutErrorMessages);
+
+		if (Files[0].Contains("Plugin")) 
+		{
+			bIsInSubmodule = true;
+			bResults = RunCommand(TEXT("submodule foreach git log"), InPathToGitBinary, InRepositoryRoot, Parameters, Files, Results, OutErrorMessages);
+		}
+		else
+		{
+			bResults = RunCommand(TEXT("log"), InPathToGitBinary, RepositoryRoot, Parameters, Files, Results, OutErrorMessages);
+		}
+
 		if(bResults)
 		{
 			ParseLogResults(Results, OutHistory);
@@ -1444,7 +1547,14 @@ bool RunGetHistory(const FString& InPathToGitBinary, const FString& InRepository
 		Parameters.Add(Revision->GetRevision());
 		TArray<FString> Files;
 		Files.Add(*Revision->GetFilename());
-		bResults &= RunCommand(TEXT("ls-tree"), InPathToGitBinary, InRepositoryRoot, Parameters, Files, Results, OutErrorMessages);
+		if (bIsInSubmodule)
+		{
+			bResults &= RunCommand(TEXT("submodule foreach git ls-tree"), InPathToGitBinary, InRepositoryRoot, Parameters, Files, Results, OutErrorMessages);
+		}
+		else
+		{
+			bResults &= RunCommand(TEXT("ls-tree"), InPathToGitBinary, RepositoryRoot, Parameters, Files, Results, OutErrorMessages);
+		}
 		if(bResults && Results.Num())
 		{
 			FGitLsTreeParser LsTree(Results);

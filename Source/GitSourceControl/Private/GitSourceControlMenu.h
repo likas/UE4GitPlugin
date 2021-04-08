@@ -23,6 +23,7 @@ public:
 	void SyncClicked();
 	void RevertClicked();
 	void RefreshClicked();
+	void HistoryClicked();
 
 private:
 	bool HaveRemoteUrl() const;

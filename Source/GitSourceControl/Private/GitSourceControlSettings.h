@@ -28,6 +28,12 @@ public:
 	/** Set the username used by the Git LFS 2 File Locks server */
 	bool SetLfsUserName(const FString& InString);
 
+	/** Set Submodules paths */
+	const TArray<FString> GetSubmodulePaths() const;
+
+	/** Set Submodules paths */
+	bool SetSubmodulePaths(const TArray<FString> Paths);
+
 	/** Load settings from ini file */
 	void LoadSettings();
 
@@ -46,4 +52,10 @@ private:
 
 	/** Username used by the Git LFS 2 File Locks server */
 	FString LfsUserName;
+
+	/** True if submodules present in current project */
+	bool bHasSubmodules;
+
+	/** Array with paths to submodules */
+	TArray<FString> SubmodulePaths;
 };

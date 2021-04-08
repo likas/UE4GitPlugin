@@ -43,6 +43,12 @@ namespace GitSourceControlUtils
 FString FindGitBinaryPath();
 
 /**
+ * Checks if there's a submodule present in current Git repository
+ * @returns nothing yet
+ */
+void CheckSubmodules(const FString& InPathToGitBinary, const FString& PathToRepositoryRoot);
+
+/**
  * Run a Git "version" command to check the availability of the binary.
  * @param InPathToGitBinary		The path to the Git binary
  * @param OutGitVersion         If provided, populate with the git version parsed from "version" command
@@ -56,6 +62,13 @@ bool CheckGitAvailability(const FString& InPathToGitBinary, FGitVersion* OutVers
  * @param OutVersion            The FGitVersion to populate
  */
  void ParseGitVersion(const FString& InVersionString, FGitVersion* OutVersion);
+
+ /**
+ * Parse the output from the "sunmodules" command into Submodule Paths
+ * @param InMessages			Messages returned by "submodules" command
+ * @param OutSubmodulePaths		Array of FString to populate
+ */
+ void ParseSubmodules(const FString& InMessages, TArray<FString> *OutSubmodulePaths);
 
 /**
  * Check git for various optional capabilities by various means.
@@ -152,7 +165,7 @@ bool RunCommit(const FString& InPathToGitBinary, const FString& InRepositoryRoot
  * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
  * @returns true if the command succeeded and returned no errors
  */
-bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const bool InUsingLfsLocking, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
+bool RunUpdateStatus(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const TArray<FString>& InSubmodulePaths, const bool InUsingLfsLocking, const TArray<FString>& InFiles, TArray<FString>& OutErrorMessages, TArray<FGitSourceControlState>& OutStates);
 
 /**
  * Run a Git "cat-file" command to dump the binary content of a revision into a file.
@@ -175,7 +188,7 @@ bool RunDumpToFile(const FString& InPathToGitBinary, const FString& InRepository
  * @param	OutErrorMessages	Any errors (from StdErr) as an array per-line
  * @param	OutHistory			The history of the file
  */
-bool RunGetHistory(const FString& InPathToGitBinary, const FString& InRepositoryRoot, const FString& InFile, bool bMergeConflict, TArray<FString>& OutErrorMessages, TGitSourceControlHistory& OutHistory);
+bool RunGetHistory(const FString& InPathToGitBinary, const FString& InRepositoryRoot, TArray<FString>& InSubmodulePaths, const FString& InFile, bool bMergeConflict, TArray<FString>& OutErrorMessages, TGitSourceControlHistory& OutHistory);
 
 /**
  * Helper function to convert a filename array to relative paths.

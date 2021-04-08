@@ -45,6 +45,9 @@ public:
 	/** Path to the Git binary */
 	FString PathToGitBinary;
 
+	/** Path to the Git binary */
+	TArray<FString> SubmodulePaths;
+
 	/** Path to the root of the Git repository: can be the ProjectDir itself, or any parent directory (found by the "Connect" operation) */
 	FString PathToRepositoryRoot;
 
